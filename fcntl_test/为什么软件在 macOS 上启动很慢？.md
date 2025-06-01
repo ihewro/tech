@@ -4,8 +4,8 @@
 
 # 结论
 
-- **macOS 中的 [XProtect](https://support.apple.com/zh-cn/guide/security/sec469d47bd8/web) 防病毒技术是导致耗时长的主要原因**（其他的因素比如 ocsp 签名校验、mac store 沙盒环境、是否有磁盘文件缓存无关不是主要因素)。
-- 理论上只在 App 首次启动 /App 发生更改（在文件系统中）/XProtect 签名发生更新进行检查，**实测电脑未重启动情况下一段时间后重启软件 dll 加载时间很长（间隔不确定，可能是天也可能是小时），耗时堆栈均在 AppleSystemPolicy 中，应该是 XProtect 规则有更新导致**
+- **macOS 中的 [XProtect](https://support.apple.com/zh-cn/guide/security/sec469d47bd8/web) 是导致耗时长的主要原因**（其他的因素比如 ocsp 签名校验、mac store 沙盒环境、是否有磁盘文件缓存无关不是主要因素)。
+- 理论上只在 App 首次启动 /App 发生更改（在文件系统中）/XProtect 签名发生更新进行检查，**实测电脑未重启动情况下一段时间后（间隔不确定，可能是天也可能是小时）重启软件 dll 加载时间很长，耗时堆栈均在 AppleSystemPolicy 中，应该是 XProtect 规则有更新导致**
 - 恶意病毒扫描逻辑发生在 dlopen 内部加载 dll 文件时，内部执行 fcntl 函数并且参数是 **`F_CHECK_LV`**，此时会触发内核的安全机制（Mandatory Access Control AppleSystemPolicy），该检查逻辑最终运行在 syspolicyd 进程中通过 YARA 库逐个检查动态库是否包含病毒特征。
 - 关闭 SIP 后会禁用 AppleSystemPolicy 策略，此时加载速度有明显的提升
 
@@ -33,11 +33,12 @@ macOS 推荐使用 Charles 抓包，启动后走完引导流程之后就可以�
 
 instruments 是一个非常强大工具，不逊色于 WPA。这里分别选择采集 cpu 负载（Time Profiler）、dyld 日志（dyld Activity）、系统内核调用，比如 fcntl/mmap 等等接口（System Call Trace）、磁盘占用（Disk Usage）情况。
 
+![](media/17487686512072.jpg)
+
+
 ### 采样 chrome
 
 **这里以启动 chrome 为例。**
-
-![](media/17487686512072.jpg)
 
 查看耗时情况，可以看到主要耗时在 dlopen_from 加载 `/ Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/136.0.7103.114/Google Chrome Framework` 动态库，最终耗时在 `fcntl` 接口上。但是 `__fcntl` 后续没有具体实现的堆栈了。
 ![](media/17487781126741.jpg)
@@ -71,7 +72,7 @@ typedef struct fchecklv {
     void            *lv_error_message;
 } fchecklv_t;
 ```
-trace 里看不到参数信息，在 lldb 中调试了一下是 0，剩下的两个用来存储 fcntl 错误信息的。
+trace 里看不到参数信息，在 lldb 中调试了一下 lv_file_start 是 0，剩下的两个用来存储 fcntl 错误信息的。
 
 ```Bash
 # 断点
